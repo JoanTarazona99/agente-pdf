@@ -117,13 +117,13 @@ def print_next_steps(ollama_found):
         print("3. Inicia Ollama en otra terminal:")
         print("   ollama serve\n")
         print("4. Descarga un modelo (en otra terminal con Ollama ejecutándose):")
-        print("   ollama pull gemma3:latest\n")
+        print("   ollama pull kiwi_kiwi/gemma-4-uncensores:e4b\n")
         print("5. Corre la aplicación:")
     else:
         print("2. Verifica que Ollama esté ejecutándose:")
         print("   ollama serve\n")
         print("3. Descarga el modelo (si no lo tienes):")
-        print("   ollama pull gemma3:latest\n")
+        print("   ollama pull kiwi_kiwi/gemma-4-uncensores:e4b\n")
         print("4. Corre la aplicación:")
     
     print("   streamlit run st.py\n")

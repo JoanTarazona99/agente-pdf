@@ -434,7 +434,7 @@ if "messages" not in st.session_state:
 if "voice_text" not in st.session_state:
     st.session_state.voice_text = None
 if "modelo" not in st.session_state:
-    st.session_state.modelo = "gemma3:latest"
+    st.session_state.modelo = "kiwi_kiwi/gemma-4-uncensores:e4b"
 
 
 # ========== SIDEBAR ==========
@@ -763,10 +763,7 @@ st_html(mic_inject_js, height=0)
 
 # ========== MODEL SELECT (injected into chat bar via JS) ==========
 MODELS = {
-    "gemma3:latest": "🧠 Gemma 3",
-    "deepseek-r1:8b": "🐋 DeepSeek R1",
-    "llama3-groq-tool-use:latest": "🦙 Llama 3",
-    "qwen2.5-coder:7b": "💻 Qwen 2.5",
+    "kiwi_kiwi/gemma-4-uncensores:e4b": "🧠 Gemma 4"
 }
 
 # Sync from query params if user changed model via injected select
