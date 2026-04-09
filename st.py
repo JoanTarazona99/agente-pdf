@@ -1,4 +1,6 @@
 import os
+import hashlib
+import shutil
 os.environ.setdefault('NO_PROXY', 'localhost,127.0.0.1')
 os.environ.setdefault('HF_HUB_OFFLINE', '1')
 os.environ.setdefault('TRANSFORMERS_OFFLINE', '1')
@@ -429,6 +431,8 @@ if "pdf_content" not in st.session_state:
     st.session_state.pdf_content = None
 if "pdf_name" not in st.session_state:
     st.session_state.pdf_name = None
+if "pdf_hash" not in st.session_state:
+    st.session_state.pdf_hash = None
 if "messages" not in st.session_state:
     st.session_state.messages = []
 if "voice_text" not in st.session_state:
@@ -446,9 +450,18 @@ with st.sidebar:
         st.success(t("cache_cleared"))
     st.divider()
     if st.button(t("new_chat"), use_container_width=True):
+        old_hash = st.session_state.pdf_hash
+
         st.session_state.messages = []
         st.session_state.pdf_content = None
         st.session_state.pdf_name = None
+        st.session_state.pdf_hash = None
+
+        if old_hash:
+            old_db = f"./chroma_db/{old_hash}"
+            if os.path.exists(old_db):
+                shutil.rmtree(old_db, ignore_errors=True)
+
         st.rerun()
 
 
@@ -505,17 +518,31 @@ pdf_file = st.file_uploader(
     label_visibility="collapsed",
     key="pdf_uploader"
 )
+
 if pdf_file is not None:
-    new_content = pdf_file.read()
-    if new_content and (st.session_state.pdf_name != pdf_file.name):
-        is_valid, msg = validate_pdf(new_content, pdf_file.name)
-        if is_valid:
-            st.session_state.pdf_content = new_content
-            st.session_state.pdf_name = pdf_file.name
-            st.session_state.messages = []
-            st.rerun()
-        else:
-            st.error(f"❌ {msg}")
+    new_content = pdf_file.getvalue()
+
+    if new_content:
+        new_hash = hashlib.sha256(new_content).hexdigest()
+
+        if st.session_state.pdf_hash != new_hash:
+            is_valid, msg = validate_pdf(new_content, pdf_file.name)
+            if is_valid:
+                old_hash = st.session_state.pdf_hash
+
+                st.session_state.pdf_content = new_content
+                st.session_state.pdf_name = pdf_file.name
+                st.session_state.pdf_hash = new_hash
+                st.session_state.messages = []
+
+                if old_hash:
+                    old_db = f"./chroma_db/{old_hash}"
+                    if os.path.exists(old_db):
+                        shutil.rmtree(old_db, ignore_errors=True)
+
+                st.rerun()
+            else:
+                st.error(f"❌ {msg}")
 
 
 # ========== HISTORIAL DE CHAT ==========
@@ -593,10 +620,12 @@ def process_question(pregunta: str):
                         raise
         else:
             estrategia = t("strategy_rag")
+            db_dir = f"./chroma_db/{st.session_state.pdf_hash}"
+
             vectorstore = Chroma.from_documents(
                 documents=chunks,
                 embedding=embeddings,
-                persist_directory="./chroma_db"
+                persist_directory=db_dir
             )
             retriever = vectorstore.as_retriever(
                 search_type="mmr",
