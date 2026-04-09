@@ -18,7 +18,7 @@ embedding_model = HuggingFaceEmbeddings(model_name="sentence-transformers/all-Mi
 db = FAISS.from_documents(docs, embedding_model)
 
 # 4. LLM con Ollama
-llm = OllamaLLM(model="gemma3:latest")
+llm = OllamaLLM(model="kiwi_kiwi/gemma-4-uncensores:e4b")
 
 # 5. Cadena RAG
 qa_chain = RetrievalQA.from_chain_type(llm=llm, retriever=db.as_retriever())
