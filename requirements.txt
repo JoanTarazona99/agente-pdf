@@ -1,0 +1,28 @@
+# LangChain núcleo
+langchain==0.2.13
+langchain-community
+langchain-text-splitters
+# Ollama
+langchain-ollama>=0.3.0
+
+# Streamlit web
+streamlit
+
+# PDFs
+pypdf>=3.0.0
+
+# Vectorstore local (Chroma)
+chromadb>=1.5.5
+
+# Embeddings
+sentence-transformers
+
+# Audio
+streamlit-audiorec
+
+# Utilidades  
+python-dotenv
+tqdm
+requests
+pydantic
+groq

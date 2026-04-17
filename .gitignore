@@ -71,4 +71,3 @@ nul
 # Keep this repo-specific files
 .copilot-instructions
 README.md
-requirements.txt
