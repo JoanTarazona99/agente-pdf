@@ -19,6 +19,9 @@ transformers>=4.30.0
 # Groq SDK
 groq>=0.1.0
 
+# Computer vision helpers required by some transformers image processors
+torchvision>=0.15.2
+
 # Audio
 streamlit-audiorec
 

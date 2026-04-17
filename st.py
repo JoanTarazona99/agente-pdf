@@ -734,7 +734,12 @@ def process_question(pregunta: str):
 lang_map = {"es": "es-ES", "en": "en-US", "ru": "ru-RU"}
 mic_lang = lang_map.get(st.session_state.lang, "es-ES")
 
-from streamlit.components.v1 import html as st_html
+import urllib.parse
+
+# Helper: render HTML/JS via data URL inside an iframe (replaces deprecated st.components.v1.html)
+def render_html_via_iframe(html: str, height: int = 0):
+    data_url = "data:text/html;charset=utf-8," + urllib.parse.quote(html)
+    st.iframe(data_url, height=height)
 
 mic_inject_js = f"""
 <script>
@@ -848,7 +853,7 @@ mic_inject_js = f"""
 }})();
 </script>
 """
-st_html(mic_inject_js, height=0)
+render_html_via_iframe(mic_inject_js, height=0)
 
 # ========== MODEL SELECT (injected into chat bar via JS) ==========
 MODELS = {
@@ -926,7 +931,7 @@ model_inject_js = f"""
 }})();
 </script>
 """
-st_html(model_inject_js, height=0)
+render_html_via_iframe(model_inject_js, height=0)
 
 # ========== CHAT INPUT ==========
 if pregunta := st.chat_input(t("chat_placeholder")):
