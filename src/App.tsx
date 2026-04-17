@@ -1,447 +1,520 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   FileText, 
   Send, 
-  Mic, 
   Settings, 
-  Plus, 
+  Mic, 
+  MicOff, 
   Trash2, 
-  Loader2, 
-  X
+  ChevronRight,
+  Loader2,
+  AlertCircle,
+  CheckCircle2,
+  Search,
+  Cpu,
+  Database,
+  Info
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useDropzone } from 'react-dropzone';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
 import { PDFProcessor } from './lib/pdf-processor';
-import { VectorStore } from './lib/vector-store';
 import { EmbeddingsManager } from './lib/embeddings';
-import { TRANSLATIONS, Language } from './lib/translations';
-import { callGroq } from './lib/groq';
+import { VectorStore } from './lib/vector-store';
+import { TRANSLATIONS, type Language } from './lib/translations';
 
-// Utility for tailwind classes
+// Utility for merging tailwind classes
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-// --- Types ---
+// Types
 interface Message {
   role: 'user' | 'assistant';
   content: string;
   details?: {
+    model: string;
     strategy: string;
     chunks: number;
     pages: number;
-    model: string;
+    chars: number;
   };
 }
 
+// Speech Recognition Type Helper
+type SpeechRecognition = any;
+const SpeechRecognitionAPI = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+
 export default function App() {
-  // --- State ---
+  // State
   const [lang, setLang] = useState<Language>('es');
   const [messages, setMessages] = useState<Message[]>([]);
-  const [input, setInput] = useState('');
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [isLoadingModel, setIsLoadingModel] = useState(true);
+  const [inputValue, setInputValue] = useState('');
   const [pdfName, setPdfName] = useState<string | null>(null);
-  const [pdfPages, setPdfPages] = useState<string[]>([]);
+  const [isProcessing, setIsProcessing] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [apiKey, setApiKey] = useState(() => localStorage.getItem('groq_api_key') || '');
-  const [model, setModel] = useState('llama-3.3-70b-versatile');
-  
-  // RAG references
-  const vectorStoreRef = useRef<VectorStore>(new VectorStore());
+  const [selectedModel, setSelectedModel] = useState('llama-3.3-70b-versatile');
+  const [modelProgress, setModelProgress] = useState<number | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Refs
+  const vectorStoreRef = useRef<VectorStore | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
 
   const t = (key: keyof typeof TRANSLATIONS['es']) => TRANSLATIONS[lang][key] || key;
 
-  // --- Initialization ---
-  useEffect(() => {
-    const initModel = async () => {
-      try {
-        await EmbeddingsManager.getInstance().init();
-        setIsLoadingModel(false);
-      } catch (err) {
-        console.error("Failed to load embeddings model:", err);
-      }
-    };
-    initModel();
-  }, []);
-
+  // Scroll to bottom on messages change
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // --- Handlers ---
-  const onDrop = useCallback(async (acceptedFiles: File[]) => {
-    const file = acceptedFiles[0];
-    if (!file) return;
+  // Sync API Key to localStorage
+  useEffect(() => {
+    localStorage.setItem('groq_api_key', apiKey);
+  }, [apiKey]);
 
-    setIsProcessing(true);
-    try {
-      const { pages } = await PDFProcessor.extractText(file);
-      setPdfName(file.name);
-      setPdfPages(pages);
-      
-      const chunks = PDFProcessor.chunkText(pages);
-      vectorStoreRef.current.clear();
-      await vectorStoreRef.current.addDocuments(chunks);
-      
-      setMessages([]); // Clear chat for new PDF
-    } catch (err) {
-      console.error(err);
-      alert(t('error'));
-    } finally {
-      setIsProcessing(false);
+  // Initialize Speech Recognition
+  useEffect(() => {
+    if (SpeechRecognitionAPI) {
+      const recognition = new SpeechRecognitionAPI();
+      recognition.continuous = false;
+      recognition.interimResults = false;
+      recognition.lang = lang === 'es' ? 'es-ES' : lang === 'en' ? 'en-US' : 'ru-RU';
+
+      recognition.onresult = (event: any) => {
+        const transcript = event.results[0][0].transcript;
+        setInputValue(prev => (prev ? prev + ' ' : '') + transcript);
+        setIsRecording(false);
+      };
+
+      recognition.onerror = () => setIsRecording(false);
+      recognition.onend = () => setIsRecording(false);
+
+      recognitionRef.current = recognition;
     }
   }, [lang]);
 
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
-    onDrop,
-    accept: { 'application/pdf': ['.pdf'] },
-    multiple: false
-  });
-
-  const handleSend = async (textOverride?: string) => {
-    const text = textOverride || input;
-    if (!text.trim() || isProcessing) return;
-    if (!apiKey) {
-      alert(t('api_key_required'));
-      setIsSidebarOpen(true);
-      return;
-    }
-
-    const userMsg: Message = { role: 'user', content: text };
-    setMessages(prev => [...prev, userMsg]);
-    setInput('');
-    setIsProcessing(true);
-
-    try {
-      let context = "";
-      let strategy = "";
-      const chunks_k = 5;
-
-      // Simple RAG logic
-      if (pdfPages.length > 0) {
-        // If it's a small PDF, use everything
-        const totalChars = pdfPages.join('').length;
-        if (totalChars < 10000) {
-          context = pdfPages.join('\n\n');
-          strategy = t('strategy_full');
-        } else {
-          const relevantChunks = await vectorStoreRef.current.similaritySearch(text, chunks_k);
-          context = relevantChunks.map(c => c.pageContent).join('\n\n');
-          strategy = t('strategy_rag');
-        }
-      }
-
-      const promptTemplate = `
-        You are an expert assistant. ANSWER ALWAYS IN ${lang.toUpperCase()}.
-        Answer based ONLY on the provided context.
-        Be thorough and complete. If the question asks to list elements, characters, topics or data, review ALL the context and include ALL of them without omitting any.
-        If you cannot find the answer in the context, say so clearly.
-
-        Context:
-        ${context || "No context provided."}
-
-        Question: ${text}
-
-        Detailed answer:
-      `;
-
-      const response = await callGroq([{ role: 'user', content: promptTemplate }], apiKey, model);
-      
-      const assistantMsg: Message = { 
-        role: 'assistant', 
-        content: response,
-        details: {
-          strategy,
-          chunks: vectorStoreRef.current.totalChunks,
-          pages: pdfPages.length,
-          model
-        }
-      };
-      setMessages(prev => [...prev, assistantMsg]);
-    } catch (err: any) {
-      setMessages(prev => [...prev, { role: 'assistant', content: `❌ Error: ${err.message}` }]);
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  const handleVoiceInput = () => {
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognition) {
+  const toggleRecording = () => {
+    if (!recognitionRef.current) {
       alert(t('mic_error'));
       return;
     }
 
-    const recognition = new SpeechRecognition();
-    recognition.lang = lang === 'es' ? 'es-ES' : lang === 'ru' ? 'ru-RU' : 'en-US';
-    recognition.start();
-
-    recognition.onresult = (event: any) => {
-      const transcript = event.results[0][0].transcript;
-      setInput(transcript);
-      // Optional: auto-send
-      // handleSend(transcript);
-    };
+    if (isRecording) {
+      recognitionRef.current.stop();
+    } else {
+      recognitionRef.current.start();
+      setIsRecording(true);
+    }
   };
 
-  const clearAll = () => {
-    setPdfName(null);
-    setPdfPages([]);
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || file.type !== 'application/pdf') return;
+
+    setIsProcessing(true);
+    setError(null);
+    setPdfName(file.name);
     setMessages([]);
-    vectorStoreRef.current.clear();
+
+    try {
+      const { pages } = await PDFProcessor.extractText(file);
+      
+      const chunks = PDFProcessor.chunkText(pages, 1000, 200);
+
+      const embeddingsManager = EmbeddingsManager.getInstance();
+      
+      // Initialize model and show progress
+      await embeddingsManager.init((progress) => {
+        setModelProgress(Math.round(progress * 100));
+      });
+      setModelProgress(null);
+
+      const store = new VectorStore();
+      await store.addDocuments(chunks);
+      vectorStoreRef.current = store;
+
+      setIsProcessing(false);
+    } catch (err: any) {
+      console.error(err);
+      setError(err.message || 'Error processing PDF');
+      setIsProcessing(false);
+      setPdfName(null);
+    }
   };
 
-  const saveApiKey = (val: string) => {
-    setApiKey(val);
-    localStorage.setItem('groq_api_key', val);
+  const callGroq = async (prompt: string) => {
+    if (!apiKey) throw new Error(t('api_key_required'));
+
+    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: selectedModel,
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.2,
+        max_tokens: 1024
+      })
+    });
+
+    if (!response.ok) {
+      const data = await response.json();
+      throw new Error(data.error?.message || 'Failed to call Groq API');
+    }
+
+    const data = await response.json();
+    return data.choices[0].message.content;
+  };
+
+  const handleSendMessage = async () => {
+    if (!inputValue.trim() || isProcessing) return;
+    if (!vectorStoreRef.current) {
+      setError(t('no_pdf_yet'));
+      return;
+    }
+
+    const userQuery = inputValue.trim();
+    setInputValue('');
+    setMessages(prev => [...prev, { role: 'user', content: userQuery }]);
+    setIsProcessing(true);
+    setError(null);
+
+    try {
+      // 1. Retrieve relevant context
+      const searchResults = await vectorStoreRef.current.similaritySearch(userQuery, 5);
+      const context = searchResults.map(r => r.pageContent).join('\n\n---\n\n');
+
+      // 2. Build Prompt
+      const prompt = `
+        ${t('prompt_template')}
+        
+        CONTEXT:
+        ${context}
+        
+        QUESTION:
+        ${userQuery}
+      `;
+
+      // 3. Call AI
+      const answer = await callGroq(prompt);
+
+      setMessages(prev => [...prev, { 
+        role: 'assistant', 
+        content: answer,
+        details: {
+          model: selectedModel,
+          strategy: searchResults.length > 0 ? t('strategy_rag') : t('strategy_full'),
+          chunks: searchResults.length,
+          pages: 0,
+          chars: context.length
+        }
+      }]);
+    } catch (err: any) {
+      console.error(err);
+      setError(err.message);
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   return (
-    <div className="flex h-screen bg-[#0f111a] text-gray-200 overflow-hidden font-sans">
-      {/* --- Sidebar (Settings) --- */}
+    <div className="flex h-screen bg-[#0f111a] text-slate-200 font-sans overflow-hidden">
+      {/* Sidebar Overlay */}
       <AnimatePresence>
         {isSidebarOpen && (
-          <>
-            <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setIsSidebarOpen(false)}
-              className="fixed inset-0 bg-black/50 z-40 backdrop-blur-sm"
-            />
-            <motion.div 
-              initial={{ x: '100%' }}
-              animate={{ x: 0 }}
-              exit={{ x: '100%' }}
-              className="fixed right-0 top-0 h-full w-80 bg-[#1a1c2e] z-50 p-6 shadow-2xl border-l border-white/10"
-            >
-              <div className="flex justify-between items-center mb-8">
-                <h2 className="text-xl font-bold flex items-center gap-2">
-                  <Settings className="w-5 h-5" /> {t('config')}
-                </h2>
-                <button onClick={() => setIsSidebarOpen(false)} className="p-2 hover:bg-white/5 rounded-full transition-colors">
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              <div className="space-y-6">
-                <div>
-                  <label className="block text-sm font-medium text-gray-400 mb-2">{t('groq_key')}</label>
-                  <input 
-                    type="password" 
-                    value={apiKey}
-                    onChange={(e) => saveApiKey(e.target.value)}
-                    placeholder="gsk_..."
-                    className="w-full bg-[#0f111a] border border-white/10 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-400 mb-2">{t('model')}</label>
-                  <select 
-                    value={model}
-                    onChange={(e) => setModel(e.target.value)}
-                    className="w-full bg-[#0f111a] border border-white/10 rounded-lg px-4 py-2 focus:outline-none"
-                  >
-                    <option value="llama-3.3-70b-versatile">Llama 3.3 70B</option>
-                    <option value="llama3-8b-8192">Llama 3 8B</option>
-                    <option value="mixtral-8x7b-32768">Mixtral 8x7B</option>
-                  </select>
-                </div>
-
-                <div className="pt-4">
-                  <button 
-                    onClick={clearAll}
-                    className="w-full flex items-center justify-center gap-2 py-2 bg-red-500/10 text-red-400 rounded-lg hover:bg-red-500/20 transition-colors border border-red-500/20"
-                  >
-                    <Trash2 className="w-4 h-4" /> {t('clear_cache')}
-                  </button>
-                </div>
-              </div>
-            </motion.div>
-          </>
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setIsSidebarOpen(false)}
+            className="fixed inset-0 bg-black/50 z-40 backdrop-blur-sm lg:hidden"
+          />
         )}
       </AnimatePresence>
 
-      {/* --- Main Content --- */}
-      <div className="flex-1 flex flex-col relative max-w-5xl mx-auto w-full px-4 sm:px-6">
-        
-        {/* Header */}
-        <header className="py-4 flex items-center justify-between border-b border-white/5">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-600/20">
-              <FileText className="text-white w-6 h-6" />
+      {/* Sidebar */}
+      <motion.aside 
+        initial={false}
+        animate={{ 
+          width: isSidebarOpen ? 320 : 0,
+          opacity: isSidebarOpen ? 1 : 0
+        }}
+        className="fixed lg:relative z-50 h-full bg-[#161925] border-r border-slate-800/50 flex flex-col overflow-hidden"
+      >
+        <div className="p-6 w-[320px] flex-1 flex flex-col gap-6">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-bold flex items-center gap-2">
+              <Settings className="w-5 h-5 text-indigo-400" />
+              {t('config')}
+            </h2>
+            <button onClick={() => setIsSidebarOpen(false)} className="lg:hidden text-slate-400 hover:text-white">
+              <ChevronRight className="w-6 h-6 rotate-180" />
+            </button>
+          </div>
+
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                Groq API Key
+              </label>
+              <input 
+                type="password"
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                placeholder="gsk_..."
+                className="w-full bg-[#0f111a] border border-slate-700 rounded-xl px-4 py-2 focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+              />
             </div>
-            <div>
-              <h1 className="font-bold text-lg leading-tight">Agente PDF</h1>
-              <div className="flex items-center gap-2">
-                <span className={cn("w-2 h-2 rounded-full", pdfName ? "bg-green-500" : "bg-gray-600")}></span>
-                <span className="text-xs text-gray-500 font-medium">
-                  {pdfName ? pdfName : t('no_pdf_yet')}
-                </span>
-              </div>
+
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                {t('model')}
+              </label>
+              <select 
+                value={selectedModel}
+                onChange={(e) => setSelectedModel(e.target.value)}
+                className="w-full bg-[#0f111a] border border-slate-700 rounded-xl px-4 py-2 focus:ring-2 focus:ring-indigo-500 outline-none appearance-none"
+              >
+                <option value="llama-3.3-70b-versatile">Llama 3.3 70B</option>
+                <option value="llama3-8b-8192">Llama 3 8B</option>
+                <option value="mixtral-8x7b-32768">Mixtral 8x7B</option>
+              </select>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <div className="flex bg-white/5 p-1 rounded-lg">
-              {(['es', 'en', 'ru'] as Language[]).map(l => (
+          <div className="mt-auto pt-6 border-t border-slate-800">
+            <button 
+              onClick={() => {
+                setMessages([]);
+                setPdfName(null);
+                vectorStoreRef.current = null;
+                setError(null);
+              }}
+              className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors"
+            >
+              <Trash2 className="w-4 h-4" />
+              {t('clear_cache')}
+            </button>
+          </div>
+        </div>
+      </motion.aside>
+
+      {/* Main Content */}
+      <main className="flex-1 flex flex-col min-w-0 bg-[#0f111a] relative">
+        {/* Top Header */}
+        <header className="h-16 border-b border-slate-800/50 flex items-center justify-between px-6 bg-[#0f111a]/80 backdrop-blur-md sticky top-0 z-30">
+          <div className="flex items-center gap-4">
+            <button 
+              onClick={() => setIsSidebarOpen(true)}
+              className="p-2 -ml-2 text-slate-400 hover:text-white lg:hidden"
+            >
+              <Settings className="w-6 h-6" />
+            </button>
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center">
+                <FileText className="w-5 h-5 text-white" />
+              </div>
+              <h1 className="font-bold text-lg hidden sm:block tracking-tight">Agente PDF</h1>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 sm:gap-4">
+            <div className="hidden sm:flex bg-slate-900/50 p-1 rounded-xl border border-slate-800">
+              {(['es', 'en', 'ru'] as Language[]).map((l) => (
                 <button
                   key={l}
                   onClick={() => setLang(l)}
                   className={cn(
-                    "px-3 py-1 rounded text-xs font-bold transition-all",
-                    lang === l ? "bg-blue-600 text-white shadow-md" : "text-gray-400 hover:text-gray-200"
+                    "px-3 py-1 rounded-lg text-xs font-bold transition-all uppercase",
+                    lang === l ? "bg-indigo-600 text-white shadow-lg" : "text-slate-500 hover:text-slate-300"
                   )}
                 >
-                  {l.toUpperCase()}
+                  {l}
                 </button>
               ))}
             </div>
+            
             <button 
               onClick={() => setIsSidebarOpen(true)}
-              className="p-2 hover:bg-white/5 rounded-lg transition-colors text-gray-400 hover:text-white"
+              className="hidden lg:flex p-2 bg-slate-900 border border-slate-800 rounded-xl text-slate-400 hover:text-white transition-all shadow-sm"
             >
               <Settings className="w-5 h-5" />
             </button>
           </div>
         </header>
 
-        {/* Chat Messages */}
-        <main className="flex-1 overflow-y-auto py-8 space-y-6 scrollbar-thin scrollbar-thumb-white/10">
+        {/* Chat Area */}
+        <div className="flex-1 overflow-y-auto px-4 py-8 space-y-6 scrollbar-thin scrollbar-thumb-slate-800 scrollbar-track-transparent">
           {messages.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center text-center px-4">
-              <motion.div 
-                initial={{ scale: 0.9, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                className="mb-6 w-20 h-20 bg-blue-600/10 rounded-full flex items-center justify-center"
-              >
-                <FileText className="w-10 h-10 text-blue-500" />
-              </motion.div>
-              <h2 className="text-2xl font-bold text-white mb-2">{t('greeting')}</h2>
-              <p className="text-gray-500 max-w-sm mb-8">{t('greeting_sub')}</p>
+            <div className="max-w-2xl mx-auto flex flex-col items-center justify-center mt-20 text-center animate-in fade-in slide-in-from-bottom-4 duration-700">
+              <div className="w-20 h-20 bg-indigo-600/10 rounded-full flex items-center justify-center mb-6">
+                <FileText className="w-10 h-10 text-indigo-500" />
+              </div>
+              <h2 className="text-3xl font-bold text-white mb-2">{t('greeting')}</h2>
+              <p className="text-slate-400 text-lg mb-8 max-w-md">{t('greeting_sub')}</p>
               
-              {!pdfName && (
-                <div {...getRootProps()} className={cn(
-                  "w-full max-w-md border-2 border-dashed rounded-2xl p-8 transition-all cursor-pointer",
-                  isDragActive ? "border-blue-500 bg-blue-500/10" : "border-white/10 hover:border-white/20 bg-white/5"
-                )}>
-                  <input {...getInputProps()} />
-                  <Plus className="w-8 h-8 text-gray-400 mx-auto mb-4" />
-                  <p className="font-medium">{t('attach_pdf')}</p>
-                  <p className="text-xs text-gray-500 mt-2">PDF files up to 20MB</p>
+              {!pdfName ? (
+                <label className="group relative flex flex-col items-center justify-center w-full max-w-sm h-40 border-2 border-dashed border-slate-700 rounded-3xl hover:border-indigo-500/50 hover:bg-indigo-500/5 transition-all cursor-pointer overflow-hidden">
+                  <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                    <Database className="w-10 h-10 text-slate-500 mb-4 group-hover:scale-110 transition-transform duration-300" />
+                    <p className="text-sm text-slate-400 group-hover:text-slate-300">{t('attach_pdf')}</p>
+                  </div>
+                  <input type="file" className="hidden" accept=".pdf" onChange={handleFileUpload} />
+                  
+                  {isProcessing && (
+                    <div className="absolute inset-0 bg-slate-900/90 flex flex-col items-center justify-center p-6 backdrop-blur-sm">
+                      <Loader2 className="w-10 h-10 text-indigo-500 animate-spin mb-4" />
+                      <p className="text-white font-medium mb-1">{t('processing')}</p>
+                      {modelProgress !== null && (
+                        <div className="w-full bg-slate-800 rounded-full h-1.5 mt-2 overflow-hidden max-w-[200px]">
+                          <motion.div 
+                            className="bg-indigo-500 h-full" 
+                            initial={{ width: 0 }}
+                            animate={{ width: `${modelProgress}%` }}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </label>
+              ) : (
+                <div className="flex items-center gap-3 px-6 py-4 bg-indigo-600/10 border border-indigo-500/30 rounded-2xl">
+                  <CheckCircle2 className="w-5 h-5 text-indigo-400" />
+                  <span className="font-medium text-indigo-100">{t('pdf_loaded')}: {pdfName}</span>
                 </div>
               )}
             </div>
           ) : (
-            <div className="space-y-6 pb-20">
+            <div className="max-w-3xl mx-auto space-y-6">
               {messages.map((msg, i) => (
                 <motion.div 
-                  initial={{ y: 10, opacity: 0 }}
-                  animate={{ y: 0, opacity: 1 }}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
                   key={i} 
                   className={cn(
-                    "flex flex-col max-w-[85%]",
-                    msg.role === 'user' ? "ml-auto items-end" : "mr-auto items-start"
+                    "flex flex-col gap-2",
+                    msg.role === 'user' ? "items-end" : "items-start"
                   )}
                 >
                   <div className={cn(
-                    "px-4 py-3 rounded-2xl text-sm leading-relaxed",
+                    "max-w-[85%] px-5 py-3.5 rounded-2xl text-[15px] leading-relaxed shadow-sm",
                     msg.role === 'user' 
-                      ? "bg-blue-600 text-white rounded-tr-none shadow-lg shadow-blue-600/10" 
-                      : "bg-[#1a1c2e] text-gray-200 border border-white/5 rounded-tl-none"
+                      ? "bg-indigo-600 text-white rounded-tr-none" 
+                      : "bg-[#1e2330] text-slate-200 border border-slate-800/50 rounded-tl-none"
                   )}>
                     {msg.content}
                   </div>
                   
                   {msg.details && (
-                    <div className="mt-2 text-[10px] text-gray-500 flex gap-3 px-2">
-                      <span>{msg.details.strategy}</span>
-                      <span>•</span>
-                      <span>{msg.details.model}</span>
-                      <span>•</span>
-                      <span>{msg.details.pages} pgs</span>
+                    <div className="flex items-center gap-4 mt-1 px-1">
+                      <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-500">
+                        <Cpu className="w-3 h-3" />
+                        {msg.details.model}
+                      </div>
+                      <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-indigo-400/80">
+                        <Search className="w-3 h-3" />
+                        {msg.details.strategy}
+                      </div>
                     </div>
                   )}
                 </motion.div>
               ))}
+              
               {isProcessing && (
-                <div className="flex items-center gap-3 text-gray-500 text-sm animate-pulse">
-                  <div className="w-6 h-6 bg-[#1a1c2e] rounded-full flex items-center justify-center">
-                    <Loader2 className="w-3 h-3 animate-spin" />
+                <div className="flex items-start gap-3">
+                  <div className="bg-[#1e2330] px-5 py-4 rounded-2xl rounded-tl-none border border-slate-800/50">
+                    <div className="flex gap-1">
+                      <span className="w-2 h-2 bg-indigo-500 rounded-full animate-bounce [animation-delay:-0.3s]"></span>
+                      <span className="w-2 h-2 bg-indigo-500 rounded-full animate-bounce [animation-delay:-0.15s]"></span>
+                      <span className="w-2 h-2 bg-indigo-500 rounded-full animate-bounce"></span>
+                    </div>
                   </div>
-                  {t('processing')}
+                </div>
+              )}
+              
+              {error && (
+                <div className="flex items-center gap-3 bg-red-500/10 border border-red-500/20 p-4 rounded-xl text-red-400 text-sm">
+                  <AlertCircle className="w-5 h-5 flex-shrink-0" />
+                  {error}
                 </div>
               )}
               <div ref={chatEndRef} />
             </div>
           )}
-        </main>
+        </div>
 
-        {/* Chat Input Bar */}
-        <div className="absolute bottom-6 left-0 right-0 px-4 sm:px-6">
-          <div className="max-w-4xl mx-auto">
-            {isLoadingModel ? (
-              <div className="bg-[#1a1c2e] border border-white/5 rounded-2xl p-4 flex items-center justify-center gap-3 text-sm text-gray-400">
-                <Loader2 className="w-4 h-4 animate-spin text-blue-500" />
-                Loading AI components...
-              </div>
-            ) : (
-              <div className="relative group">
-                <div className="absolute -inset-0.5 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl opacity-20 group-focus-within:opacity-40 transition-opacity blur"></div>
-                <div className="relative flex items-center bg-[#1a1c2e] border border-white/10 rounded-2xl p-2 pl-4 shadow-xl">
-                  {pdfName && (
-                    <div {...getRootProps()} className="mr-2 p-2 hover:bg-white/5 rounded-xl transition-colors cursor-pointer group/upload">
-                      <input {...getInputProps()} />
-                      <Plus className="w-5 h-5 text-gray-400 group-hover/upload:text-blue-500" />
-                    </div>
-                  )}
-                  
-                  <textarea
-                    rows={1}
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault();
-                        handleSend();
-                      }
-                    }}
-                    placeholder={pdfName ? t('chat_placeholder') : t('no_pdf_yet')}
-                    disabled={!pdfName || isProcessing}
-                    className="flex-1 bg-transparent border-none focus:ring-0 text-sm py-2 resize-none placeholder-gray-600 disabled:opacity-50"
-                  />
-                  
-                  <div className="flex items-center gap-1">
-                    <button 
-                      onClick={handleVoiceInput}
-                      disabled={!pdfName || isProcessing}
-                      className="p-2 hover:bg-white/5 rounded-xl transition-colors text-gray-400 hover:text-red-500 disabled:opacity-30"
-                    >
-                      <Mic className="w-5 h-5" />
-                    </button>
-                    <button 
-                      onClick={() => handleSend()}
-                      disabled={!input.trim() || !pdfName || isProcessing}
-                      className="p-2 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-800 disabled:text-gray-600 text-white rounded-xl transition-all shadow-lg shadow-blue-600/20"
-                    >
-                      <Send className="w-5 h-5" />
-                    </button>
-                  </div>
+        {/* Input Area */}
+        <div className="p-4 sm:p-6 bg-gradient-to-t from-[#0f111a] via-[#0f111a] to-transparent">
+          <div className="max-w-3xl mx-auto">
+            {pdfName && (
+              <div className="mb-4 flex items-center justify-between px-2">
+                <div className="flex items-center gap-2 text-xs font-medium text-slate-500">
+                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  {pdfName}
                 </div>
+                <button 
+                  onClick={() => {
+                    setPdfName(null);
+                    vectorStoreRef.current = null;
+                  }}
+                  className="text-xs text-slate-600 hover:text-red-400 transition-colors"
+                >
+                  Cambiar PDF
+                </button>
               </div>
             )}
-            <p className="text-[10px] text-center text-gray-600 mt-3 font-medium tracking-wide uppercase">
-              Powered by Groq • Client-side RAG
-            </p>
+            
+            <div className="relative group flex items-center gap-3 bg-[#1e2330] border border-slate-700/50 p-2 rounded-2xl focus-within:border-indigo-500/50 focus-within:ring-4 focus-within:ring-indigo-500/5 transition-all shadow-xl">
+              <button 
+                onClick={toggleRecording}
+                className={cn(
+                  "p-3 rounded-xl transition-all",
+                  isRecording 
+                    ? "bg-red-500 text-white animate-pulse" 
+                    : "text-slate-500 hover:text-indigo-400 hover:bg-indigo-500/10"
+                )}
+              >
+                {isRecording ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
+              </button>
+              
+              <input 
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
+                placeholder={t('chat_placeholder')}
+                className="flex-1 bg-transparent py-3 text-slate-200 outline-none placeholder:text-slate-600"
+              />
+              
+              <button 
+                onClick={handleSendMessage}
+                disabled={!inputValue.trim() || isProcessing || !pdfName}
+                className={cn(
+                  "p-3 rounded-xl transition-all shadow-lg",
+                  inputValue.trim() && !isProcessing && pdfName
+                    ? "bg-indigo-600 text-white hover:bg-indigo-500 scale-100" 
+                    : "bg-slate-800 text-slate-600 scale-95 opacity-50 cursor-not-allowed"
+                )}
+              >
+                {isProcessing ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
+              </button>
+            </div>
+            
+            <div className="mt-3 text-center">
+              <p className="text-[10px] text-slate-600 font-medium uppercase tracking-widest flex items-center justify-center gap-2">
+                <Info className="w-3 h-3" />
+                Powered by Groq & Transformers.js · Local Embeddings
+              </p>
+            </div>
           </div>
         </div>
-      </div>
+      </main>
     </div>
   );
 }

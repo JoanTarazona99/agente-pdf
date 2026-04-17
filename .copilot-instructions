@@ -1,192 +1,120 @@
-# Copilot Instructions - Agente PDF
+# Copilot Instructions — Agente PDF (Repositorio reestructurado)
 
-## 🎯 Descripción del Proyecto
-Este es un proyecto de RAG (Retrieval-Augmented Generation) que permite:
-- Subir documentos PDF
-- Hacer preguntas sobre el contenido
-- Recibir respuestas basadas en los PDFs usando Ollama y ChromaDB
+Resumen corto
+---------------
+Este repositorio ahora contiene una implementación frontend moderna (React + Vite + Tailwind) que reemplaza el antiguo backend/Streamlit. Las instrucciones aquí describen el nuevo proyecto, su estructura, flujos de desarrollo, y cómo integrar servicios de inferencia y modelos.
 
-## 🏗️ Arquitectura Técnica
+Estado actual
+------------
+- Frontend: React (Vite) con Tailwind CSS y Framer Motion.
+- Procesamiento PDF y embeddings: implementación en cliente (pdfjs-dist, @xenova/transformers) — opcional según build.
+- LLM remoto: integración opcional con Groq (requiere API key) a través de `src/lib/groq.ts`.
+- El viejo código Python/Streamlit fue eliminado.
 
-### Stack Principal
-- **LangChain 0.2.13**: Framework RAG con runnables
-- **Ollama**: LLM local para generación de respuestas
-- **Chroma >=1.5.5**: Vector store local con persistencia
-- **Streamlit 1.54.0**: Web UI
-- **Sentence-transformers**: Embeddings locales (all-MiniLM-L6-v2)
-- **PyPDF**: Extracción de texto de PDFs
-- **Python 3.13**: Runtime
-
-### Estructura de Archivos
+Estructura recomendada del repo
+--------------------------------
 ```
-agente pdf/
-├── st.py                 # App principal Streamlit (RAG básico)
-├── staaudio.py          # Interfaz con audio (speech-to-text, text-to-speech)
-├── stn8n.py             # Backend FastAPI (alternativa REST)
-├── agente.py            # Script de demostración
-├── utils.py             # Funciones compartidas
-├── requirements.txt     # Dependencias
-├── chroma_db/           # Base de datos vectorial persistente
-├── .env                 # Configuración local (no versionado)
-└── rag-tutorial-v2/     # Proyecto tutorial relacionado
-```
-
-## 🔌 Configuración Técnica
-
-### Embeddings
-- **Modelo**: all-MiniLM-L6-v2 (ligero, 80MB)
-- **Framework**: sentence-transformers
-- **Ejecución**: CPU local
-- **⚠️ Nota**: NO usar OllamaEmbeddings (Ollama no soporta embeddings en estos modelos)
-
-### LLM (Ollama)
-- **Modelos disponibles:**
-- `kiwi_kiwi/gemma-4-uncensores:e4b` (usuario local) ⚡ REEMPLAZA AQUI SEGÚN TU INSTANCIA
-- `llama3-groq-tool-use:latest` (4.7 GB) - Excelente para reasoning
-- `deepseek-r1:8b` (5.2 GB) - Alto rendimiento
-- `qwen2.5-coder:7b` (4.7 GB) - Especializado en código
-
-**Configuración Ollama:**
-- Host: `http://localhost:11434`
-- Requisito: Ollama debe estar corriendo (`ollama serve`)
-
-### Vector Store
-- **Base de datos**: Chroma
-- **Persistencia**: `./chroma_db/` (automática)
-- **Búsqueda**: K=4 documentos por defecto (configurable en UI)
-
-## 🔧 Patrones de Desenvolvimiento
-
-### RAG Chain (Patrón Moderno)
-```python
-from langchain_core.runnables import RunnablePassthrough
-
-rag_chain = (
-    {"context": retriever, "question": RunnablePassthrough()}
-    | prompt
-    | llm
-)
-response = rag_chain.invoke(pregunta)
+./
+├── src/
+│   ├── App.tsx
+│   ├── main.tsx
+│   ├── index.css
+│   ├── lib/
+│   │   ├── pdf-processor.ts
+│   │   ├── embeddings.ts
+│   │   ├── vector-store.ts
+│   │   ├── groq.ts
+│   │   └── translations.ts
+│   └── components/
+│       ├── Sidebar.tsx
+│       ├── Chat.tsx
+│       └── Uploader.tsx
+├── public/
+│   └── index.html
+├── package.json
+├── vite.config.ts
+├── tsconfig.json
+└── README.md
 ```
 
-### Wrapper de Embeddings Personalizado
-```python
-from langchain_core.embeddings import Embeddings
-from sentence_transformers import SentenceTransformer
+Objetivos y patrones de diseño
+------------------------------
+- Privacidad-first: procesar PDFs y generar embeddings en cliente si el navegador/usuario lo permite.
+- RAG adaptable: para documentos pequeños usar contexto completo; para grandes, usar chunking + búsqueda vectorial.
+- Integración LLM: llamadas a Groq para generación (opcional). La clave se guarda en `localStorage`/`sessionStorage` o en un menú de configuración.
 
-class SentenceTransformerEmbeddings(Embeddings):
-    def __init__(self, model_name="all-MiniLM-L6-v2"):
-        self.model = SentenceTransformer(model_name)
-    
-    def embed_documents(self, texts):
-        return self.model.encode(texts, convert_to_numpy=True).tolist()
-    
-    def embed_query(self, text):
-        return self.model.encode(text, convert_to_numpy=True).tolist()
-```
-
-## ⚠️ Errores Comunes y Soluciones
-
-### Error: "this model does not support embeddings"
-**Causa**: Intentar usar OllamaEmbeddings con modelos LLM  
-**Solución**: Usar `SentenceTransformerEmbeddings` con sentence-transformers
-
-### Error: HTTP 503 de Ollama
-**Causa**: Ollama no está corriendo o timeout insuficiente  
-**Soluciones**:
-1. Verificar: `curl http://localhost:11434/api/tags`
-2. Iniciar: `ollama serve`
-3. Cargar modelo: `ollama pull kiwi_kiwi/gemma-4-uncensores:e4b`
-
-### Error: "0 bytes subidos" en PDF
-**Causa**: El archivo se leía dos veces, puntero llegaba al final  
-**Solución**: Leer una sola vez y reutilizar
-
-### Error: ModuleNotFoundError langchain_core.memory
-**Causa**: Importar de `langchain.schema` que cambió en LangChain 0.2.x  
-**Solución**: Importar de `langchain_core.documents` directamente
-
-### Error: "langchain_core.pydantic_v1" no existe
-**Causa**: langchain-huggingface incompatible con langchain-core 0.2.x  
-**Solución**: Usar sentence-transformers directamente
-
-## 📋 Checklist de Desarrollo
-
-### Antes de hacer cambios
-- [ ] Verificar que Ollama está corriendo
-- [ ] Verificar modelo está cargado: `ollama list`
-- [ ] Revisar requirements.txt para dependencias
-- [ ] Activar ambiente: `.venv/Scripts/activate`
-
-### Al agregar nuevas dependencias
-- [ ] Agregar a requirements.txt (sin versiones específicas si es posible)
-- [ ] Instalar: `pip install -r requirements.txt`
-- [ ] Probar la funcionalidad
-
-### Al cambiar importes
-- [ ] Preferir `langchain_core.*` sobre `langchain.*` en 0.2.x
-- [ ] No mixear pydantic v1 y v2 (usar v2 siempre)
-- [ ] Usar `Embeddings` de `langchain_core` como interfaz base
-
-## 🚀 Comandos Útiles
+Guía rápida de desarrollo
+-------------------------
+1. Instalar dependencias:
 
 ```bash
-# Entorno
-source .venv/Scripts/activate
-
-# Desarrollo
-streamlit run st.py                 # App principal
-streamlit run staaudio.py           # Con audio
-uvicorn stn8n:app --reload         # Backend FastAPI
-
-# Ollama
-ollama serve                        # Iniciar servidor
-ollama list                         # Ver modelos
-ollama pull kiwi_kiwi/gemma-4-uncensores:e4b          # Descargar modelo
-curl http://localhost:11434/api/tags  # Verificar conectividad
-
-# Dependencias
-pip install -r requirements.txt
-pip install --upgrade package_name
-pip list | grep langchain
+npm install
+# o
+yarn
 ```
 
-## 📝 Notas Importantes
+2. Ejecutar en desarrollo:
 
-1. **Versiones Bloqueadas**: Algunos paquetes tienen restricciones de versión estrictas:
-   - langchain==0.2.13 (no más nuevo por incompatibilidades)
-   - chromadb>=1.5.5 (Python 3.13 compatible)
-
-2. **LocalHost Only**: La app corre en localhost:8501 por defecto. Para acceso remoto, configurar Streamlit.
-
-3. **Persistencia**: Los embeddings se guardan en `./chroma_db/` automáticamente
-
-4. **Cache**: El caché está en `./cache/` (crear manualmente si es necesario)
-
-5. **Timeout**: Ollama puede tardar en responder. Ajustar espacio de tiempo si es necesario en st.py si hay timeouts.
-
-## 🔍 Debugging
-
-```python
-# Ver stack trace completo
-import traceback
-traceback.format_exc()
-
-# Logger en Streamlit
-st.write(f"Debug: {variable}")
-
-# Verificar vectorstore
-vectorstore.similarity_search("query", k=3)
-
-# Testear embeddings
-embeddings = SentenceTransformerEmbeddings()
-embedding_result = embeddings.embed_query("test")
-print(len(embedding_result))  # Debe ser 384 para all-MiniLM-L6-v2
+```bash
+npm run dev
 ```
 
-## 📚 Referencias
+3. Build de producción:
 
-- [LangChain Runnables](https://python.langchain.com/docs/expression_language/runnable)
-- [Chroma Docs](https://docs.trychroma.com/)
-- [Ollama Models](https://ollama.ai/library)
-- [Sentence-Transformers](https://www.sbert.net/)
+```bash
+npm run build
+npm run preview
+```
+
+Tokens y secretos
+------------------
+- Groq API Key: opcional. Si se usa, guardarla mediante la UI (localStorage/sessionStorage) o usar variables de entorno en despliegue.
+- No guardar secretos en el repo.
+
+Implementación técnica — puntos clave
+-----------------------------------
+- `pdf-processor.ts` — extrae texto con `pdfjs-dist`, realiza limpieza básica y chunking.
+- `embeddings.ts` — integra `@xenova/transformers` para generar embeddings en el navegador (si se opta por local). Alternativa: usar servicio externo de embeddings.
+- `vector-store.ts` — implemente un store simple en memoria con búsqueda por coseno y recuperación MMR.
+- `groq.ts` — helper para llamadas a Groq: envía prompt, maneja streaming y errores.
+- `App.tsx` — orquesta UI, carga PDF, construye prompt, y decide: full-context vs. RAG.
+
+Decisiones de despliegue
+------------------------
+- Recomendado: Vercel, Netlify o Cloudflare Pages para la SPA. Si se requiere servidor (p. ej. para llaves), usar Vercel Serverless o un pequeño backend en Render.
+- Si optas por usar `@xenova/transformers` en el navegador, verifica compatibilidad de navegadores y tamaño de modelos (WASM). Para producción, ofrece opción de usar embeddings remotas.
+
+Checklist para contribuir
+------------------------
+- [ ] Mantener separadas las responsabilidades: `lib/` para lógica, `components/` para UI.
+- [ ] Añadir tests mínimos (unit para vector-store y pdf-processor).
+- [ ] Documentar en `README.md` cómo añadir la clave de Groq (UI) y cómo limpiar caché.
+- [ ] Evitar almacenar secretos en el repo.
+
+Errores comunes (nuevo flujo)
+----------------------------
+- Problema: Modelo WebAssembly no carga en ciertos navegadores → fallback a embeddings remotas.
+- Problema: PDF con contenido escaneado (imagen) → necesita OCR; esta app no incluye OCR por defecto.
+
+Comandos útiles
+---------------
+```bash
+# Dev
+npm run dev
+
+# Build
+npm run build
+
+# Lint/Format
+npm run lint
+npm run format
+```
+
+Notas finales
+-------------
+- Esta versión de `.copilot-instructions` refleja la reestructuración hacia un frontend React moderno. Si quieres que vuelva a añadir una sección con recetas de migración desde el viejo Streamlit (scripts, pasos de portado, equivalencias de componentes), dime y la incluyo.
+
+Autoridad y contacto
+--------------------
+- Si el equipo necesita ayuda para generar los archivos base (`pdf-processor.ts`, `groq.ts`, `vector-store.ts`) puedo crearlos en el repo.
+

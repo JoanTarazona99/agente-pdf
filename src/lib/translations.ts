@@ -25,7 +25,8 @@ export const TRANSLATIONS = {
     api_key_required: "Se requiere Groq API Key en Configuración",
     settings: "Ajustes",
     save: "Guardar",
-    groq_key: "Groq API Key"
+    groq_key: "Groq API Key",
+    prompt_template: "Eres un asistente experto. Responde basándote ÚNICAMENTE en el contexto proporcionado. Sé exhaustivo y completo. Si no encuentras la respuesta, dilo claramente."
   },
   en: {
     greeting: "Hi, I'm PDF Agent.",
@@ -53,7 +54,8 @@ export const TRANSLATIONS = {
     api_key_required: "Groq API Key required in Settings",
     settings: "Settings",
     save: "Save",
-    groq_key: "Groq API Key"
+    groq_key: "Groq API Key",
+    prompt_template: "You are an expert assistant. Answer based ONLY on the provided context. Be thorough and complete. If you cannot find the answer, say so clearly."
   },
   ru: {
     greeting: "Привет, я PDF Агент.",
@@ -81,7 +83,8 @@ export const TRANSLATIONS = {
     api_key_required: "Требуется Groq API Key в настройках",
     settings: "Настройки",
     save: "Сохранить",
-    groq_key: "Groq API Key"
+    groq_key: "Groq API Key",
+    prompt_template: "Ты — экспертный ассистент. Отвечай ТОЛЬКО на основе предоставленного контекста. Будь исчерпывающим и полным. Если не можешь найти ответ, скажи об этом прямо."
   }
 };
 
