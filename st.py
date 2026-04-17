@@ -6,7 +6,10 @@ os.environ.setdefault('HF_HUB_OFFLINE', '1')
 os.environ.setdefault('TRANSFORMERS_OFFLINE', '1')
 
 import streamlit as st
-from langchain_ollama import OllamaLLM
+import requests
+import json
+from typing import Optional
+from groq import Groq
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import Chroma
 from sentence_transformers import SentenceTransformer
@@ -579,11 +582,60 @@ def process_question(pregunta: str):
         total_chars = sum(len(doc.page_content) for doc in documents)
         cfg = auto_config(len(documents), total_chars)
 
-        llm = OllamaLLM(
-            model=st.session_state.modelo,
-            temperature=cfg["temperature"],
-            base_url="http://localhost:11434"
-        )
+        # Llamadas a GROQ en lugar de Ollama. Se espera que la API key
+        # se configure como variable de entorno `GROQ_API_KEY` en Render.
+        def call_groq_model(prompt_text: str, model: Optional[str] = None, temperature: float = 0.2) -> str:
+            api_key = os.environ.get("GROQ_API_KEY")
+            if not api_key:
+                raise RuntimeError("GROQ_API_KEY no está establecida en el entorno")
+            if model is None:
+                model = os.environ.get("GROQ_MODEL", st.session_state.modelo)
+
+            # Instanciar cliente Groq (usa api_key desde entorno)
+            client = Groq(api_key=api_key)
+
+            messages = [{"role": "user", "content": prompt_text}]
+
+            completion = client.chat.completions.create(
+                model=model,
+                messages=messages,
+                temperature=temperature,
+                max_completion_tokens=1024,
+                top_p=1,
+                stream=True,
+                stop=None,
+            )
+
+            # Acumular contenido del stream
+            output = ""
+            for chunk in completion:
+                try:
+                    # Intentar ruta tipo delta (stream)
+                    delta = chunk.choices[0].delta
+                    if delta is not None:
+                        # delta puede ser objeto o dict
+                        if hasattr(delta, "content"):
+                            output += delta.content or ""
+                        elif isinstance(delta, dict):
+                            output += delta.get("content", "") or ""
+                        continue
+
+                    # Si no hay delta, intentar message completo
+                    msg = chunk.choices[0].message
+                    if msg is not None:
+                        if hasattr(msg, "content"):
+                            output += msg.content or ""
+                        elif isinstance(msg, dict):
+                            output += msg.get("content", "") or ""
+                except Exception:
+                    # Fallback for dict-shaped chunk
+                    try:
+                        c = (chunk.get("choices", [{}])[0].get("delta", {}) or {}).get("content", "")
+                        output += c or ""
+                    except Exception:
+                        pass
+
+            return output
 
         embeddings = get_embeddings()
 
@@ -607,11 +659,12 @@ def process_question(pregunta: str):
         if len(chunks) <= UMBRAL_CHUNKS:
             estrategia = t("strategy_full")
             todo = format_docs(chunks)
-            chain = prompt | llm
+            # Construir prompt de texto y llamar a GROQ
+            prompt_text = prompt.template.format(context=todo, question=pregunta)
             respuesta = None
             for intento in range(3):
                 try:
-                    respuesta = chain.invoke({"context": todo, "question": pregunta})
+                    respuesta = call_groq_model(prompt_text, model=os.environ.get("GROQ_MODEL"), temperature=cfg["temperature"])
                     break
                 except Exception:
                     if intento < 2:
@@ -635,15 +688,22 @@ def process_question(pregunta: str):
                     "lambda_mult": 0.5
                 }
             )
-            chain = (
-                {"context": retriever | format_docs, "question": RunnablePassthrough()}
-                | prompt
-                | llm
-            )
+            # Recuperar documentos relevantes y construir prompt
+            try:
+                # Algunas implementaciones exponen `get_relevant_documents`
+                relevant = retriever.get_relevant_documents(pregunta)
+            except Exception:
+                try:
+                    relevant = retriever(pregunta)
+                except Exception:
+                    relevant = []
+
+            contexto = format_docs(relevant)
+            prompt_text = prompt.template.format(context=contexto, question=pregunta)
             respuesta = None
             for intento in range(3):
                 try:
-                    respuesta = chain.invoke(pregunta)
+                    respuesta = call_groq_model(prompt_text, model=os.environ.get("GROQ_MODEL"), temperature=cfg["temperature"])
                     break
                 except Exception:
                     if intento < 2:
