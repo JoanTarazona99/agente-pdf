@@ -101,6 +101,7 @@ export default function App() {
   }, [lang]);
 
   useEffect(() => {
+    // Keep local copy for local/dev usage only; serverless proxy will use env var in production
     localStorage.setItem('groq_api_key', apiKey);
   }, [apiKey]);
 
@@ -181,10 +182,6 @@ export default function App() {
 
   const handleSend = async () => {
     if (!input.trim() || isProcessing || !pdfText) return;
-    if (!apiKey) {
-      setIsSettingsOpen(true);
-      return;
-    }
 
     const question = input.trim();
     setInput('');
@@ -209,7 +206,8 @@ export default function App() {
       }
 
       const systemPrompt = PROMPT_TEMPLATES[lang].replace('{context}', context).replace('{question}', question);
-      const response = await chatWithGroq(apiKey, model, question, systemPrompt);
+                    // Call chatWithGroq without client API key; library proxies to serverless endpoint in browser
+                    const response = await chatWithGroq(model, question, systemPrompt);
 
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),

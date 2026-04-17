@@ -86,13 +86,27 @@ Implementación técnica — puntos clave
 - `pdf-processor.ts` — extrae texto con `pdfjs-dist`, realiza limpieza básica y chunking.
 - `embeddings.ts` — integra `@xenova/transformers` para generar embeddings en el navegador (si se opta por local). Alternativa: usar servicio externo de embeddings.
 - `vector-store.ts` — implemente un store simple en memoria con búsqueda por coseno y recuperación MMR.
-- `groq.ts` — helper para llamadas a Groq: envía prompt, maneja streaming y errores.
+- `groq.ts` — helper para llamadas a Groq. Ahora el cliente proxea a `/api/groq`.
+	- `api/groq.ts`: nueva función serverless (Vercel) que ejecuta las llamadas a Groq con `GROQ_API_KEY` en variables de entorno.
+	- `src/lib/groq.ts` detecta si está en el navegador y llama a `/api/groq`; en entorno servidor usa `process.env.GROQ_API_KEY`.
 - `App.tsx` — orquesta UI, carga PDF, construye prompt, y decide: full-context vs. RAG.
 
 Decisiones de despliegue
 ------------------------
 - Recomendado: Vercel, Netlify o Cloudflare Pages para la SPA. Si se requiere servidor (p. ej. para llaves), usar Vercel Serverless o un pequeño backend en Render.
 - Si optas por usar `@xenova/transformers` en el navegador, verifica compatibilidad de navegadores y tamaño de modelos (WASM). Para producción, ofrece opción de usar embeddings remotas.
+
+Despliegue rápido en Vercel (resumen):
+
+- Crear proyecto en Vercel apuntando al repo.
+- Build command: `npm run build`
+- Output directory: `dist` (el plugin `vite-plugin-singlefile` genera un único artefacto estático)
+- Añadir variable de entorno `GROQ_API_KEY` (Preview y Production)
+
+Notas de seguridad y uso:
+
+- No almacenes `GROQ_API_KEY` en `localStorage` en producción. En producción el endpoint serverless usará la variable de entorno.
+- El cliente llama a `/api/groq`; la función serverless ejecuta las llamadas a Groq y devuelve el texto.
 
 Checklist para contribuir
 ------------------------
