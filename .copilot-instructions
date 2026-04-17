@@ -1,0 +1,192 @@
+# Copilot Instructions - Agente PDF
+
+## 🎯 Descripción del Proyecto
+Este es un proyecto de RAG (Retrieval-Augmented Generation) que permite:
+- Subir documentos PDF
+- Hacer preguntas sobre el contenido
+- Recibir respuestas basadas en los PDFs usando Ollama y ChromaDB
+
+## 🏗️ Arquitectura Técnica
+
+### Stack Principal
+- **LangChain 0.2.13**: Framework RAG con runnables
+- **Ollama**: LLM local para generación de respuestas
+- **Chroma >=1.5.5**: Vector store local con persistencia
+- **Streamlit 1.54.0**: Web UI
+- **Sentence-transformers**: Embeddings locales (all-MiniLM-L6-v2)
+- **PyPDF**: Extracción de texto de PDFs
+- **Python 3.13**: Runtime
+
+### Estructura de Archivos
+```
+agente pdf/
+├── st.py                 # App principal Streamlit (RAG básico)
+├── staaudio.py          # Interfaz con audio (speech-to-text, text-to-speech)
+├── stn8n.py             # Backend FastAPI (alternativa REST)
+├── agente.py            # Script de demostración
+├── utils.py             # Funciones compartidas
+├── requirements.txt     # Dependencias
+├── chroma_db/           # Base de datos vectorial persistente
+├── .env                 # Configuración local (no versionado)
+└── rag-tutorial-v2/     # Proyecto tutorial relacionado
+```
+
+## 🔌 Configuración Técnica
+
+### Embeddings
+- **Modelo**: all-MiniLM-L6-v2 (ligero, 80MB)
+- **Framework**: sentence-transformers
+- **Ejecución**: CPU local
+- **⚠️ Nota**: NO usar OllamaEmbeddings (Ollama no soporta embeddings en estos modelos)
+
+### LLM (Ollama)
+- **Modelos disponibles:**
+- `kiwi_kiwi/gemma-4-uncensores:e4b` (usuario local) ⚡ REEMPLAZA AQUI SEGÚN TU INSTANCIA
+- `llama3-groq-tool-use:latest` (4.7 GB) - Excelente para reasoning
+- `deepseek-r1:8b` (5.2 GB) - Alto rendimiento
+- `qwen2.5-coder:7b` (4.7 GB) - Especializado en código
+
+**Configuración Ollama:**
+- Host: `http://localhost:11434`
+- Requisito: Ollama debe estar corriendo (`ollama serve`)
+
+### Vector Store
+- **Base de datos**: Chroma
+- **Persistencia**: `./chroma_db/` (automática)
+- **Búsqueda**: K=4 documentos por defecto (configurable en UI)
+
+## 🔧 Patrones de Desenvolvimiento
+
+### RAG Chain (Patrón Moderno)
+```python
+from langchain_core.runnables import RunnablePassthrough
+
+rag_chain = (
+    {"context": retriever, "question": RunnablePassthrough()}
+    | prompt
+    | llm
+)
+response = rag_chain.invoke(pregunta)
+```
+
+### Wrapper de Embeddings Personalizado
+```python
+from langchain_core.embeddings import Embeddings
+from sentence_transformers import SentenceTransformer
+
+class SentenceTransformerEmbeddings(Embeddings):
+    def __init__(self, model_name="all-MiniLM-L6-v2"):
+        self.model = SentenceTransformer(model_name)
+    
+    def embed_documents(self, texts):
+        return self.model.encode(texts, convert_to_numpy=True).tolist()
+    
+    def embed_query(self, text):
+        return self.model.encode(text, convert_to_numpy=True).tolist()
+```
+
+## ⚠️ Errores Comunes y Soluciones
+
+### Error: "this model does not support embeddings"
+**Causa**: Intentar usar OllamaEmbeddings con modelos LLM  
+**Solución**: Usar `SentenceTransformerEmbeddings` con sentence-transformers
+
+### Error: HTTP 503 de Ollama
+**Causa**: Ollama no está corriendo o timeout insuficiente  
+**Soluciones**:
+1. Verificar: `curl http://localhost:11434/api/tags`
+2. Iniciar: `ollama serve`
+3. Cargar modelo: `ollama pull kiwi_kiwi/gemma-4-uncensores:e4b`
+
+### Error: "0 bytes subidos" en PDF
+**Causa**: El archivo se leía dos veces, puntero llegaba al final  
+**Solución**: Leer una sola vez y reutilizar
+
+### Error: ModuleNotFoundError langchain_core.memory
+**Causa**: Importar de `langchain.schema` que cambió en LangChain 0.2.x  
+**Solución**: Importar de `langchain_core.documents` directamente
+
+### Error: "langchain_core.pydantic_v1" no existe
+**Causa**: langchain-huggingface incompatible con langchain-core 0.2.x  
+**Solución**: Usar sentence-transformers directamente
+
+## 📋 Checklist de Desarrollo
+
+### Antes de hacer cambios
+- [ ] Verificar que Ollama está corriendo
+- [ ] Verificar modelo está cargado: `ollama list`
+- [ ] Revisar requirements.txt para dependencias
+- [ ] Activar ambiente: `.venv/Scripts/activate`
+
+### Al agregar nuevas dependencias
+- [ ] Agregar a requirements.txt (sin versiones específicas si es posible)
+- [ ] Instalar: `pip install -r requirements.txt`
+- [ ] Probar la funcionalidad
+
+### Al cambiar importes
+- [ ] Preferir `langchain_core.*` sobre `langchain.*` en 0.2.x
+- [ ] No mixear pydantic v1 y v2 (usar v2 siempre)
+- [ ] Usar `Embeddings` de `langchain_core` como interfaz base
+
+## 🚀 Comandos Útiles
+
+```bash
+# Entorno
+source .venv/Scripts/activate
+
+# Desarrollo
+streamlit run st.py                 # App principal
+streamlit run staaudio.py           # Con audio
+uvicorn stn8n:app --reload         # Backend FastAPI
+
+# Ollama
+ollama serve                        # Iniciar servidor
+ollama list                         # Ver modelos
+ollama pull kiwi_kiwi/gemma-4-uncensores:e4b          # Descargar modelo
+curl http://localhost:11434/api/tags  # Verificar conectividad
+
+# Dependencias
+pip install -r requirements.txt
+pip install --upgrade package_name
+pip list | grep langchain
+```
+
+## 📝 Notas Importantes
+
+1. **Versiones Bloqueadas**: Algunos paquetes tienen restricciones de versión estrictas:
+   - langchain==0.2.13 (no más nuevo por incompatibilidades)
+   - chromadb>=1.5.5 (Python 3.13 compatible)
+
+2. **LocalHost Only**: La app corre en localhost:8501 por defecto. Para acceso remoto, configurar Streamlit.
+
+3. **Persistencia**: Los embeddings se guardan en `./chroma_db/` automáticamente
+
+4. **Cache**: El caché está en `./cache/` (crear manualmente si es necesario)
+
+5. **Timeout**: Ollama puede tardar en responder. Ajustar espacio de tiempo si es necesario en st.py si hay timeouts.
+
+## 🔍 Debugging
+
+```python
+# Ver stack trace completo
+import traceback
+traceback.format_exc()
+
+# Logger en Streamlit
+st.write(f"Debug: {variable}")
+
+# Verificar vectorstore
+vectorstore.similarity_search("query", k=3)
+
+# Testear embeddings
+embeddings = SentenceTransformerEmbeddings()
+embedding_result = embeddings.embed_query("test")
+print(len(embedding_result))  # Debe ser 384 para all-MiniLM-L6-v2
+```
+
+## 📚 Referencias
+
+- [LangChain Runnables](https://python.langchain.com/docs/expression_language/runnable)
+- [Chroma Docs](https://docs.trychroma.com/)
+- [Ollama Models](https://ollama.ai/library)
+- [Sentence-Transformers](https://www.sbert.net/)
