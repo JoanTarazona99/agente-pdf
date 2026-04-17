@@ -1,0 +1,50 @@
+node_modules/
+dist/
+build/
+.vite/
+/.cache/
+.env
+.env.*
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# IDEs
+.vscode/
+.idea/
+.DS_Store
+
+# TypeScript
+*.tsbuildinfo
+
+# Logs
+logs/
+*.log
+
+# OS
+Thumbs.db
+ehthumbs.db
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+pip-wheel-metadata/
+
+# ChromaDB and caches
+chroma_db/
+cache/
+
+# Misc
+coverage/
+.pytest_cache/
+htmlcov/
+node_modules

@@ -1,62 +1,50 @@
-import { pipeline } from '@xenova/transformers';
+import { pipeline, env } from '@xenova/transformers';
+
+// Configuration for web environment
+env.allowLocalModels = false;
+env.useBrowserCache = true;
 
 export class EmbeddingsManager {
-  private static instance: EmbeddingsManager;
   private extractor: any = null;
-  private modelName = 'Xenova/all-MiniLM-L6-v2';
+  private onProgress?: (progress: { status: string; progress: number }) => void;
 
-  private constructor() {}
-
-  static getInstance(): EmbeddingsManager {
-    if (!EmbeddingsManager.instance) {
-      EmbeddingsManager.instance = new EmbeddingsManager();
-    }
-    return EmbeddingsManager.instance;
+  constructor(onProgress?: (progress: { status: string; progress: number }) => void) {
+    this.onProgress = onProgress;
   }
 
-  async init(onProgress?: (progress: number) => void) {
+  async init() {
     if (this.extractor) return;
 
-    this.extractor = await pipeline('feature-extraction', this.modelName, {
+    this.extractor = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', {
       progress_callback: (data: any) => {
-        if (data.status === 'progress' && onProgress) {
-          onProgress(data.progress);
+        if (data.status === 'progress' && this.onProgress) {
+          this.onProgress({
+            status: data.file,
+            progress: data.progress || 0
+          });
         }
       }
     });
   }
 
   /**
-   * Generates embeddings for a single string or an array of strings
+   * Embeds a single string into a vector.
    */
-  async embed(text: string | string[]): Promise<number[][]> {
-    if (!this.extractor) {
-      await this.init();
-    }
-
-    const texts = Array.isArray(text) ? text : [text];
-    const results: number[][] = [];
-
-    for (const t of texts) {
-      const output = await this.extractor(t, { pooling: 'mean', normalize: true });
-      results.push(Array.from(output.data));
-    }
-
-    return results;
+  async embed(text: string): Promise<number[]> {
+    if (!this.extractor) await this.init();
+    
+    const output = await this.extractor(text, { pooling: 'mean', normalize: true });
+    return Array.from(output.data) as number[];
   }
 
   /**
-   * Calculates cosine similarity between two vectors
+   * Embeds multiple strings.
    */
-  static cosineSimilarity(vecA: number[], vecB: number[]): number {
-    let dotProduct = 0;
-    let normA = 0;
-    let normB = 0;
-    for (let i = 0; i < vecA.length; i++) {
-      dotProduct += vecA[i] * vecB[i];
-      normA += vecA[i] * vecA[i];
-      normB += vecB[i] * vecB[i];
+  async embedMany(texts: string[]): Promise<number[][]> {
+    const results: number[][] = [];
+    for (const text of texts) {
+      results.push(await this.embed(text));
     }
-    return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
+    return results;
   }
 }

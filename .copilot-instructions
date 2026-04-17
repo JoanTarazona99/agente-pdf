@@ -1,5 +1,15 @@
 # Copilot Instructions — Agente PDF (Repositorio reestructurado)
 
+ACTUALIZACIÓN: reestructurado nuevamente tras 8 cambios recientes.
+
+MODO CAVEMAN: activado para respuestas en chat con el usuario (respuestas breves, directas).
+
+Últimos cambios (resumen)
+- `src/lib/translations.ts`: traducciones actualizadas.
+- `src/lib/embeddings.ts`, `src/lib/pdf-processor.ts`, `src/lib/vector-store.ts`: confirmadas y revisadas.
+- `st.py` removido/archivado; proyecto migrado a frontend React.
+- Se añadirá `.gitignore` con reglas para Node, Python y artefactos.
+
 Resumen corto
 ---------------
 Este repositorio ahora contiene una implementación frontend moderna (React + Vite + Tailwind) que reemplaza el antiguo backend/Streamlit. Las instrucciones aquí describen el nuevo proyecto, su estructura, flujos de desarrollo, y cómo integrar servicios de inferencia y modelos.

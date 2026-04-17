@@ -1,43 +1,36 @@
-import { EmbeddingsManager } from './embeddings';
-import { DocumentChunk } from './pdf-processor';
+export interface DocumentChunk {
+  content: string;
+  embedding: number[];
+  metadata: {
+    page?: number;
+  };
+}
 
 export class VectorStore {
   private chunks: DocumentChunk[] = [];
-  private embeddings: number[][] = [];
-  private embeddingsManager: EmbeddingsManager;
 
-  constructor() {
-    this.embeddingsManager = EmbeddingsManager.getInstance();
-  }
-
-  async addDocuments(chunks: DocumentChunk[]) {
+  addChunks(chunks: DocumentChunk[]) {
     this.chunks = [...this.chunks, ...chunks];
-    const texts = chunks.map(c => c.pageContent);
-    const newEmbeddings = await this.embeddingsManager.embed(texts);
-    this.embeddings = [...this.embeddings, ...newEmbeddings];
-  }
-
-  async similaritySearch(query: string, k = 5): Promise<DocumentChunk[]> {
-    const queryEmbedding = (await this.embeddingsManager.embed(query))[0];
-    
-    const scores = this.embeddings.map((emb, idx) => ({
-      score: EmbeddingsManager.cosineSimilarity(queryEmbedding, emb),
-      chunk: this.chunks[idx]
-    }));
-
-    // Sort by score descending and take top k
-    return scores
-      .sort((a, b) => b.score - a.score)
-      .slice(0, k)
-      .map(s => s.chunk);
   }
 
   clear() {
     this.chunks = [];
-    this.embeddings = [];
   }
 
-  get totalChunks() {
-    return this.chunks.length;
+  private cosineSimilarity(a: number[], b: number[]): number {
+    const dotProduct = a.reduce((sum, val, i) => sum + val * b[i], 0);
+    const magA = Math.sqrt(a.reduce((sum, val) => sum + val * val, 0));
+    const magB = Math.sqrt(b.reduce((sum, val) => sum + val * val, 0));
+    return dotProduct / (magA * magB);
+  }
+
+  search(queryEmbedding: number[], k: number = 5): DocumentChunk[] {
+    return [...this.chunks]
+      .sort((a, b) => {
+        const simA = this.cosineSimilarity(queryEmbedding, a.embedding);
+        const simB = this.cosineSimilarity(queryEmbedding, b.embedding);
+        return simB - simA;
+      })
+      .slice(0, k);
   }
 }
