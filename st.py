@@ -738,10 +738,9 @@ import urllib.parse
 
 # Helper: render HTML/JS via data URL inside an iframe (replaces deprecated st.components.v1.html)
 def render_html_via_iframe(html: str, height: int = 0):
-    data_url = "data:text/html;charset=utf-8," + urllib.parse.quote(html)
-    # Streamlit iframe height must be positive integer, 'stretch' or 'content'
-    iframe_height = height if isinstance(height, int) and height > 0 else 'content'
-    st.iframe(data_url, height=iframe_height)
+    # Deprecated-path helper kept for compatibility but prefer direct components
+    from streamlit.components.v1 import html as _st_html
+    _st_html(html, height=height)
 
 mic_inject_js = f"""
 <script>
