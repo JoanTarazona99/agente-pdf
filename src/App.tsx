@@ -74,7 +74,7 @@ Detailed answer:`,
 
 // --- Main Component ---
 export default function App() {
-  const [lang, setLang] = useState<Language>(() => (localStorage.getItem('lang') as Language) || 'es');
+  const [lang, setLang] = useState<Language>(() => (typeof window !== 'undefined' ? (localStorage.getItem('lang') as Language) || 'es' : 'es'));
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
@@ -82,8 +82,8 @@ export default function App() {
   const [pdfText, setPdfText] = useState<string | null>(null);
   const [pageCount, setPageCount] = useState(0);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [apiKey, setApiKey] = useState(() => localStorage.getItem('groq_api_key') || '');
-  const [model, setModel] = useState<ModelId>(() => (localStorage.getItem('groq_model') as ModelId) || 'llama-3.3-70b-versatile');
+  const [apiKey, setApiKey] = useState(() => (typeof window !== 'undefined' ? localStorage.getItem('groq_api_key') || '' : ''));
+  const [model, setModel] = useState<ModelId>(() => (typeof window !== 'undefined' ? (localStorage.getItem('groq_model') as ModelId) || 'llama-3.3-70b-versatile' : 'llama-3.3-70b-versatile'));
   const [modelProgress, setModelProgress] = useState<{status: string, progress: number} | null>(null);
 
   const embeddingsRef = useRef<EmbeddingsManager | null>(null);
@@ -97,16 +97,34 @@ export default function App() {
   );
 
   useEffect(() => {
-    localStorage.setItem('lang', lang);
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('lang', lang);
+      } catch (e) {
+        // ignore write errors (e.g., storage disabled)
+      }
+    }
   }, [lang]);
 
   useEffect(() => {
     // Keep local copy for local/dev usage only; serverless proxy will use env var in production
-    localStorage.setItem('groq_api_key', apiKey);
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('groq_api_key', apiKey);
+      } catch (e) {
+        // ignore write errors
+      }
+    }
   }, [apiKey]);
 
   useEffect(() => {
-    localStorage.setItem('groq_model', model);
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('groq_model', model);
+      } catch (e) {
+        // ignore write errors
+      }
+    }
   }, [model]);
 
   useEffect(() => {
@@ -375,6 +393,21 @@ export default function App() {
 
         {/* Chat Area */}
         <main className="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-thin scrollbar-thumb-slate-700">
+          <div className="flex justify-center mb-6">
+            <div {...getRootProps()} className={cn(
+              "w-full max-w-md p-6 border-2 border-dashed rounded-2xl transition-all cursor-pointer",
+              isDragActive ? "border-blue-500 bg-blue-500/5" : "border-slate-700 hover:border-slate-600 bg-slate-800/20"
+            )}>
+              <input {...getInputProps()} />
+              <div className="flex flex-col items-center gap-3">
+                <Plus size={28} className="text-slate-500" />
+                <p className="text-sm text-slate-400">
+                  {pdfName ? `Cambiar PDF (${pdfName})` : t('no_pdf_yet')}
+                </p>
+              </div>
+            </div>
+          </div>
+
           {!messages.length && !pdfName && (
             <div className="h-full flex flex-col items-center justify-center text-center px-4">
               <motion.div 
@@ -386,17 +419,6 @@ export default function App() {
               </motion.div>
               <h2 className="text-2xl font-bold mb-2">{t('greeting')}</h2>
               <p className="text-slate-400 max-w-md mb-8">{t('greeting_sub')}</p>
-              
-              <div {...getRootProps()} className={cn(
-                "w-full max-w-md p-10 border-2 border-dashed rounded-2xl transition-all cursor-pointer",
-                isDragActive ? "border-blue-500 bg-blue-500/5" : "border-slate-700 hover:border-slate-600 bg-slate-800/20"
-              )}>
-                <input {...getInputProps()} />
-                <div className="flex flex-col items-center gap-3">
-                  <Plus size={32} className="text-slate-500" />
-                  <p className="text-sm text-slate-400">{t('no_pdf_yet')}</p>
-                </div>
-              </div>
             </div>
           )}
 
