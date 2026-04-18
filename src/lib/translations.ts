@@ -26,6 +26,8 @@ export const TRANSLATIONS = {
     settings: 'Ajustes',
     downloading_model: 'Descargando modelo de IA...',
     ready: 'Listo'
+    ,
+    model_not_ready: "El modelo de embeddings aún no está listo. Espera unos segundos."
   },
   en: {
     title: 'PDF Agent',
@@ -52,6 +54,8 @@ export const TRANSLATIONS = {
     settings: 'Settings',
     downloading_model: 'Downloading AI model...',
     ready: 'Ready'
+    ,
+    model_not_ready: "Embeddings model not ready yet. Please wait a few seconds."
   },
   ru: {
     title: 'PDF Агент',
@@ -78,5 +82,7 @@ export const TRANSLATIONS = {
     settings: 'Настройки',
     downloading_model: 'Загрузка модели ИИ...',
     ready: 'Готово'
+     ,
+     model_not_ready: "Модель эмбеддингов ещё не готова. Пожалуйста, подождите несколько секунд."
   }
 };

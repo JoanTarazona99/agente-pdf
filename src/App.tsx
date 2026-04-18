@@ -150,8 +150,10 @@ export default function App() {
       
       // If PDF is large, chunk it and create embeddings
       if (info.text.length > 10000) {
-        if (!embeddingsRef.current) return;
-        
+        if (!embeddingsRef.current) {
+          throw new Error(t('model_not_ready') || 'El modelo de embeddings no está listo todavía. Espera unos segundos.');
+        }
+
         const chunks = PDFProcessor.chunkText(info.text);
         const embeddedChunks: DocumentChunk[] = [];
         
@@ -168,7 +170,8 @@ export default function App() {
       }
     } catch (err) {
       console.error(err);
-      alert('Error processing PDF');
+      const msg = (err as any)?.message || 'Error processing PDF';
+      alert(msg);
     } finally {
       setIsProcessing(false);
     }
