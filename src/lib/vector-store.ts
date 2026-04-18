@@ -1,36 +1,43 @@
 export interface DocumentChunk {
   content: string;
   embedding: number[];
-  metadata: {
-    page?: number;
-  };
+  metadata: Record<string, any>;
 }
 
 export class VectorStore {
   private chunks: DocumentChunk[] = [];
 
   addChunks(chunks: DocumentChunk[]) {
-    this.chunks = [...this.chunks, ...chunks];
+    this.chunks.push(...chunks);
   }
 
   clear() {
     this.chunks = [];
   }
 
-  private cosineSimilarity(a: number[], b: number[]): number {
-    const dotProduct = a.reduce((sum, val, i) => sum + val * b[i], 0);
-    const magA = Math.sqrt(a.reduce((sum, val) => sum + val * val, 0));
-    const magB = Math.sqrt(b.reduce((sum, val) => sum + val * val, 0));
-    return dotProduct / (magA * magB);
+  get size() {
+    return this.chunks.length;
   }
 
-  search(queryEmbedding: number[], k: number = 5): DocumentChunk[] {
-    return [...this.chunks]
-      .sort((a, b) => {
-        const simA = this.cosineSimilarity(queryEmbedding, a.embedding);
-        const simB = this.cosineSimilarity(queryEmbedding, b.embedding);
-        return simB - simA;
-      })
-      .slice(0, k);
+  private cosineSimilarity(a: number[], b: number[]): number {
+    let dot = 0, normA = 0, normB = 0;
+    for (let i = 0; i < a.length; i++) {
+      dot += a[i] * b[i];
+      normA += a[i] * a[i];
+      normB += b[i] * b[i];
+    }
+    return dot / (Math.sqrt(normA) * Math.sqrt(normB) + 1e-10);
+  }
+
+  search(queryEmbedding: number[], topK = 5): DocumentChunk[] {
+    if (this.chunks.length === 0) return [];
+
+    const scored = this.chunks.map(chunk => ({
+      chunk,
+      score: this.cosineSimilarity(queryEmbedding, chunk.embedding)
+    }));
+
+    scored.sort((a, b) => b.score - a.score);
+    return scored.slice(0, topK).map(s => s.chunk);
   }
 }
