@@ -393,21 +393,7 @@ export default function App() {
 
         {/* Chat Area */}
         <main className="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-thin scrollbar-thumb-slate-700">
-          <div className="flex justify-center mb-6">
-            <div {...getRootProps()} className={cn(
-              "w-full max-w-md p-6 border-2 border-dashed rounded-2xl transition-all cursor-pointer",
-              isDragActive ? "border-blue-500 bg-blue-500/5" : "border-slate-700 hover:border-slate-600 bg-slate-800/20"
-            )}>
-              <input {...getInputProps()} />
-              <div className="flex flex-col items-center gap-3">
-                <Plus size={28} className="text-slate-500" />
-                <p className="text-sm text-slate-400">
-                  {pdfName ? `Cambiar PDF (${pdfName})` : t('no_pdf_yet')}
-                </p>
-              </div>
-            </div>
-          </div>
-
+          
           {!messages.length && !pdfName && (
             <div className="h-full flex flex-col items-center justify-center text-center px-4">
               <motion.div 
@@ -419,6 +405,20 @@ export default function App() {
               </motion.div>
               <h2 className="text-2xl font-bold mb-2">{t('greeting')}</h2>
               <p className="text-slate-400 max-w-md mb-8">{t('greeting_sub')}</p>
+                  <div className="flex justify-center mb-6">
+                <div {...getRootProps()} className={cn(
+                  "w-full max-w-md p-6 border-2 border-dashed rounded-2xl transition-all cursor-pointer",
+                  isDragActive ? "border-blue-500 bg-blue-500/5" : "border-slate-700 hover:border-slate-600 bg-slate-800/20"
+                )}>
+                  <input {...getInputProps()} />
+                  <div className="flex flex-col items-center gap-3">
+                    <Plus size={28} className="text-slate-500" />
+                    <p className="text-sm text-slate-400">
+                      {pdfName ? `Cambiar PDF (${pdfName})` : t('no_pdf_yet')}
+                    </p>
+                  </div>
+                </div>
+              </div>           
             </div>
           )}
 
