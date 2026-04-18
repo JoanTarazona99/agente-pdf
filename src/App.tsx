@@ -85,7 +85,7 @@ function lsSet(key: string, value: string) {
 
 export default function App() {
   // Persistent state
-  const [lang, setLang] = useState<Language>(() => ls('lang', 'es') as Language);
+  const [lang, setLang] = useState<Language>(() => ls('lang', 'ru') as Language);
   const [apiKey, setApiKey] = useState(() => ls('groq_api_key', ''));
   const [model, setModel] = useState<ModelId>(() => ls('groq_model', 'llama-3.3-70b-versatile') as ModelId);
   const [apiKeySaved, setApiKeySaved] = useState(!!ls('groq_api_key', ''));
