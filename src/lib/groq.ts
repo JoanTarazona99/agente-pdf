@@ -18,12 +18,9 @@ export async function chatWithGroq(
   model: ModelId,
   userMessage: string,
   systemPrompt: string,
-  apiKey: string,
+  apiKey?: string,
   history: ChatMessage[] = []
 ): Promise<{ content: string; totalTokens?: number }> {
-  if (!apiKey) {
-    throw new Error('No API key provided. Please add your Groq API Key in Settings.');
-  }
 
   const messages: ChatMessage[] = [
     { role: 'system', content: systemPrompt },
@@ -31,15 +28,15 @@ export async function chatWithGroq(
     { role: 'user', content: userMessage }
   ];
 
-  const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+  const response = await fetch('/api/groq', {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
       model,
       messages,
+      apiKey: apiKey?.trim() || undefined,
       temperature: 0.3,
       max_tokens: 4096,
     }),
@@ -52,7 +49,8 @@ export async function chatWithGroq(
   }
 
   const data = await response.json();
-  const content = data.choices?.[0]?.message?.content || '';
-  const totalTokens = data.usage?.total_tokens;
-  return { content, totalTokens };
+  return {
+    content: data.content || '',
+    totalTokens: data.totalTokens,
+  };
 }
