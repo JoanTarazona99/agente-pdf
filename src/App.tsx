@@ -204,12 +204,6 @@ export default function App() {
     const question = (overrideInput ?? input).trim();
     if (!question || isProcessing || !pdfText) return;
 
-    if (!apiKey) {
-      alert(t('no_api_key'));
-      setIsSettingsOpen(true);
-      return;
-    }
-
     setInput('');
     resetTranscript();
     if (isListening) stopListening();
@@ -337,15 +331,10 @@ export default function App() {
               onClick={() => setIsSettingsOpen(true)}
               className={cn(
                 'relative p-2 rounded-xl transition-all border',
-                !apiKey
-                  ? 'border-amber-500/50 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20'
-                  : 'border-indigo-900/40 text-slate-400 hover:bg-indigo-900/30 hover:text-white'
+                'border-indigo-900/40 text-slate-400 hover:bg-indigo-900/30 hover:text-white'
               )}
             >
               <SettingsIcon size={17} />
-              {!apiKey && (
-                <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-amber-400" />
-              )}
             </button>
           </div>
         </header>
@@ -478,30 +467,6 @@ export default function App() {
 
         {/* ── INPUT BAR ── */}
         <div className="flex-none px-4 py-3 border-t border-indigo-900/30 bg-[#0f0f1a]/90 backdrop-blur-xl">
-
-          {/* No API key warning */}
-          <AnimatePresence>
-            {!apiKey && (
-              <motion.div
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: 'auto', opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                className="mb-2 overflow-hidden"
-              >
-                <div className="flex items-center gap-2.5 px-3 py-2 bg-amber-950/40 border border-amber-500/30 rounded-xl">
-                  <AlertCircle size={14} className="text-amber-400 shrink-0" />
-                  <p className="text-[12px] text-amber-300">{t('no_api_key')}</p>
-                  <button
-                    onClick={() => setIsSettingsOpen(true)}
-                    className="ml-auto text-[11px] font-semibold text-amber-400 hover:text-amber-300 underline underline-offset-2"
-                  >
-                    {t('settings')}
-                  </button>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-
           <div className="max-w-3xl mx-auto">
             <div className={cn(
               'flex items-end gap-2 px-3 py-2 rounded-2xl border transition-all duration-200',
